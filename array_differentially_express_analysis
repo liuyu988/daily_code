@@ -1,0 +1,93 @@
+# @Author: yu Liu
+# @Date:   2020-04-20 16:57:25
+
+
+# loading some libraries
+# for the microarray analysis
+library("oligo")
+library("limma")
+
+# for the color
+library("RColorBrewer")
+library("genefilter")
+library("ggplot2")
+library("gplots")
+library("grid")
+library("rgl")
+library("hgu133ahsentrezg.db")
+library("hgu133ahsentrezgcdf")
+library("hgu133ahsentrezgprobe")
+library("pd.hgu133a.hs.entrezg")
+library("hgu133plus2hsentrezg.db")
+library("hgu133plus2hsentrezgcdf")
+library("hgu133plus2hsentrezgprobe")
+library("pd.hgu133plus2.hs.entrezg")
+library("hta20hsentrezg.db")
+library("hta20hsentrezgcdf")
+library("hta20hsentrezgprobe")
+library("pd.hta20.hs.entrezg")
+
+# directory for the data
+myindir <- ""
+myoutdir <- ""
+
+# the gene we would like to investigate
+# geneid <- "9"
+probe <- "9_at"
+
+# listing the files from directory using special CEL file read function
+setwd(myindir)
+sampleinfo <- readTargets("sampleinfo.txt", sep="\t")
+nums <- dim(sampleinfo)[1]
+
+affyRaw <- read.celfiles(paste(as.character(sampleinfo$filename),".cel",sep=""), pkgname="pd.hta20.hs.entrezg")
+ph <- affyRaw@phenoData
+ph@data[ ,1] <- sampleinfo$index
+
+# pre-processing using RMA
+eset <- rma(affyRaw)
+
+data.matrix <- exprs(eset)
+# row.names(data.matrix) <- sub("(_at)", "", row.names(data.matrix))
+
+# sel <- grep("^A", row.names(data.matrix), perl=T, value=FALSE)
+# data.matrix <- data.matrix[-sel,]
+
+GSE14814 <- data.frame(
+    filename=sampleinfo[,1],  
+    expr=data.matrix[probeg,],
+    GSE=rep("GSE14814", dim(data.matrix)[2])
+    )
+
+GSE14814 <- merge(x=GSE14814, y=sampleinfo, by = "filename")
+
+
+setwd(myoutdir)
+write.table(GSE14814, "GSE14814_expr.txt", sep="\t", quote = FALSE, row.names = FALSE)
+
+
+# use limma for comparing two groups of samples
+ph@data[ ,2] <- sampleinfo$Treatment
+colnames(ph@data)[2] <- "source"
+ph@data
+
+groups <- ph@data$source
+f <- factor(groups,levels=c("CA","NO"))
+
+design <- model.matrix(~ 0 + f)
+colnames(design) <- c("CA","NO")
+
+data.fit <- lmFit(data.matrix,design)
+contrast.matrix <- makeContrasts(CA-NO, levels=design)
+data.fit.con <- contrasts.fit(data.fit,contrast.matrix)
+data.fit.eb <- eBayes(data.fit.con)
+names(data.fit.eb)
+
+options(digits=2)
+topgenes <- topTable(data.fit.eb,coef=1,number=nrow(data.matrix),
+    p.value=0.05, adjust.method="BH", lfc=0)
+
+topgenes[probe, ]
+#     logFC AveExpr    t P.Value adj.P.Val     B
+#9_at  -1.6     7.4 -3.8 0.00089     0.012 -0.74
+
