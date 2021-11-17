@@ -1,0 +1,37 @@
+library("limma")
+myindir <- ""
+myoutdir <- ""
+setwd(myindir)
+
+expr.df <- read.table(file = "GSE106582_series_matrix.txt", header =TRUE,comment.char = "!", row.names=1)
+sampleinfo <- read.table("sampleinfo.txt",header=T)
+
+groups <- sampleinfo$Treatment
+f <- factor(groups,levels=c("CA","NO"))
+
+design <- model.matrix(~ 0 + f)
+colnames(design) <- c("CA","NO")
+data.fit <- lmFit(expr.df,design)
+contrast.matrix <- makeContrasts(CA-NO, levels=design)
+data.fit.con <- contrasts.fit(data.fit,contrast.matrix)
+data.fit.eb <- eBayes(data.fit.con)
+names(data.fit.eb)
+
+options(digits=2)
+topgenes <- topTable(data.fit.eb,coef=1,number=nrow(expr.df),
+                     p.value=0.05, adjust.method="BH", lfc=0)
+probe <- "ILMN_1743055"
+topgenes[probe, ]
+#             logFC AveExpr    t P.Value adj.P.Val  B
+#ILMN_1743055 -0.39       7 -8.5 5.3e-15   7.1e-14 23
+
+
+filename <- colnames(expr.df)
+expr <- t(expr.df["ILMN_1743055",])
+GSE106582 <- cbind(sampleinfo,expr)
+GSE <- rep("GSE106582",nrow=dim(GSE106582)[1])
+GSE106582 <- cbind(GSE106582,GSE)
+colnames(GSE106582) <- c("filename","Treatment","index","expr","GSE")
+
+setwd(myoutdir)
+write.table(GSE106582,"GSE106582.txt")
