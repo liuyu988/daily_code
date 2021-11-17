@@ -6,16 +6,12 @@
 # for the microarray analysis
 library("oligo")
 library("limma")
-
-# for the color
 library("RColorBrewer")
 library("genefilter")
 library("ggplot2")
 library("gplots")
 library("grid")
 library("rgl")
-#
-
 library("hgu133ahsentrezg.db")
 library("hgu133ahsentrezgcdf")
 library("hgu133ahsentrezgprobe")
