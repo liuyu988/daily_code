@@ -1,0 +1,109 @@
+###
+###https://www.jianshu.com/p/e133ab3169fa
+####GSEA
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(stringr)
+kegmt<-read.gmt("c5.go.v7.2.symbols.gmt") #读gmt文件 
+KEGG_1<-GSEA(geneList,TERM2GENE = kegmt,pvalueCutoff=1,nPerm=1000) #GSEA分析
+library(ggplot2)
+geneList<-data$logFC #第二列可以是folodchange，也可以是logFC
+names(geneList)=data$ID #使用转换好的ID
+geneList=sort(geneList,decreasing = T) #从高到低排序
+pdf(".pdf")
+gseaplot2(KEGG,c("GO_POSITIVE_REGULATION_OF_GLUCOSE_TRANSMEMBRANE_TRANSPORT"),
+          color="#008EA0FF",pvalue_table = T)
+dev.off()
+
+####气泡图
+kk <- enrichKEGG(gene         = gene,
+                 organism     = 'hsa',
+                 pvalueCutoff = 0.05)
+pathway <- subset(kk@result,kk@result$pvalue < 0.05)
+ggplot(pathway,aes(pvalue,Description))+
+  geom_point(aes(size=Count,color=-1*log10(pvalue)))+
+  scale_color_gradient(low = 'green',high = 'orange')+
+  labs(x='-log10(pvalue)',y='pathway term')+
+  theme_bw()
+  
+#####条形图
+enrich1 <- pathway[order(pathway$pvalue),]   #对富集结果按照qvalue进行从小到大排序，保证最显著的通路在前
+enrich2 <- enrich1[1:10,]    #这里画图只展示top10的通路
+p <- ggplot(data=enrich2,aes(x=Description,y=Count,fill=-log10(pvalue)))   #fill=qvalue  fill颜色填充，使用连续值qvalue
+p1 <- p + geom_bar(stat="identity") + coord_flip()      #coord_flip()颠倒坐标轴
+p2 <- p1 + theme(panel.background=element_rect(fill='transparent',color='gray'),axis.text.y=element_text(color="black",size=12))
+p3 <- p2 + ylim(0,55) + scale_fill_gradient(low="blue",high="red")   #ylim(0,200) 更改横坐标的范围这里坐标轴颠倒了，虽然看起来是x轴，但其实是y轴
+p4 <- p3 + scale_x_discrete(limits=rev(enrich2[,2])) +labs(x="Pathway",y="Count")
+p4
+pdf("KEGG.pdf",width=9,height = 15)
+print(p4)
+dev.off()
+
+
+#下载GEO data
+library(GEOquery)
+eSet <- getGEO("GSE32651", 
+               destdir = '.',
+               getGPL = F)
+exprSet <- exprs(eSet[[1]])
+#判断矩阵是否需要log2处理
+ex <- exprSet
+qx <- as.numeric(quantile(ex, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
+LogC <- (qx[5] > 100) ||
+  (qx[6]-qx[1] > 50 && qx[2] > 0) ||
+  (qx[2] > 0 && qx[2] < 1 && qx[4] > 1 && qx[4] < 2)
+if (LogC) { ex[which(ex <= 0)] <- NaN
+exprSet <- log2(ex)
+print("log2 transform finished")}else{print("log2 transform not needed")}
+
+##获得平台注释信息
+GPL <- getGEO('GPL570',destdir = ".")
+GPL_anno <- Table(GPL)
+GPL_anno <- GPL_anno[,c("ID","Gene Symbol")]
+
+
+##绘制表达谱热图
+annotation = data.frame(Factor = factor(sampleinfo$Treatment))
+rownames(annotation) <- colnames(data)
+pdf("diff_heatmap.pdf")
+pheatmap(data,
+         annotation_col=annotation,
+         show_rownames=F,
+         show_colnames = F,
+         annotation_legend = TRUE,
+         color = colorRampPalette(c("blue", "white", "red"))(100),
+         scale="row",
+         fontsize=9,
+         fontsize_row=6,
+         fontfamily="mono",
+         cluster_rows=TRUE,
+         cluster_cols=TRUE)
+dev.off()
+
+
+###人鼠同源基因转换
+convert <- function(x){
+  require("biomaRt")
+  human = useMart("ensembl",dataset = "hsapiens_gene_ensembl")
+  mouse = useMart("ensembl",dataset = "mmusculus_gene_ensembl")
+  
+  genesv2 = getLDS(attributes = c("mgi_symbol"),
+                   filters = 'mgi_symbol',
+                   values = x, mart = mouse,
+                   attributesL = c("hgnc_symbol"),
+                   martL = human,uniqueRows = T)
+  return(genesv2)
+}
+musGenes <- c("Hmmr", "Tlx3", "Cpeb4")
+convert(musGenes )
+
+###获得term和gene的两列表
+result <- data.frame()
+cluster <- enrich2
+for (i in 1:dim(cluster)[1]){
+  var = unlist(strsplit(cluster[i,8],split="/"))
+  for (j in 1:length(var)){
+    cluster[i,10] <- var[j]
+    result <- rbind(result,cluster[i,])
+  }
+}
